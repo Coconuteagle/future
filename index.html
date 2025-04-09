@@ -127,7 +127,7 @@
              font-size: 0.8rem;
              color: #008000;
         }
-        .error-message { color: #ff4d4d !important; } /* Important to override other styles */
+        .error-message { color: #ff4d4d !important; /* Important to override other styles */ }
     </style>
 </head>
 
@@ -139,7 +139,6 @@
         <div class="bot-message">
             안녕하세요! 사주 고인물입니다.
             무엇이 궁금하신가요?
-            <br><strong class="error-message"></strong>
             <br><strong class="error-message">💡 실행 참고: 이 페이지는 웹 서버 환경에서 실행되어야 PDF 파일을 로드할 수 있습니다. (예: Python http.server, VS Code Live Server)</strong>
         </div>
     </div>
@@ -149,7 +148,7 @@
         <button id="send-button" class="chat-send-button">Send</button> </div>
 
     <div class="footer no-print">
-         © 사주 고인물  
+        © 사주 고인물
     </div>
 </div>
 
@@ -165,7 +164,6 @@ function log(...args) {
 // --- Security & Usage Warning ---
 console.warn("🚨 SECURITY WARNING: Gemini API Key is exposed in client-side JavaScript. DO NOT USE IN PRODUCTION. Consider using a backend proxy.");
 console.warn("💡 USAGE NOTE: This HTML file must be served via a web server (e.g., `python -m http.server` or VS Code Live Server) for PDF fetching to work. Opening it as a `file:///` will likely fail.");
-// alert("🚨 💡 실행 참고: 이 페이지는 웹 서버 환경에서 실행되어야 PDF 파일을 로드할 수 있습니다.");
 
 // *** 중요: HTML 파일과 동일한 디렉토리에 있는 PDF 파일의 이름을 지정하세요 ***
 const PREDEFINED_PDF_FILENAME = 'saju_knowledge.pdf'; // <--- 여기에 PDF 파일 이름 입력!
@@ -190,16 +188,58 @@ let lastUploadedPdfName = null; // Track which PDF name was last uploaded
 const chatBox = document.getElementById('chat-box');
 const userInput = document.getElementById('user-input');
 const sendButton = document.getElementById('send-button');
-// pdfInput, selectedFileNameSpan 제거됨
 const chatInputContainer = document.querySelector('.chat-input-container');
 
 
 // --- Message Display Functions ---
-function escapeHtml(unsafe) { /* ... (이전과 동일) ... */ }
-function addUserMessage(text) { /* ... (이전과 동일) ... */ }
-function addBotMessage(htmlContent) { /* ... (이전과 동일) ... */ }
-function addErrorMessage(message) { /* ... (이전과 동일) ... */ }
-function scrollToBottom() { /* ... (이전과 동일, 약간의 지연 포함) ... */ }
+function escapeHtml(unsafe) {
+  if (typeof unsafe !== 'string') return '';
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function addUserMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'user-message';
+  div.textContent = text;
+  chatBox.appendChild(div);
+  scrollToBottom();
+}
+
+function addBotMessage(htmlContent) {
+  log("addBotMessage called with content length:", htmlContent?.length); // <-- 디버깅 로그 추가
+  removeStatusUI(); // 새 봇메시지 시점에 기존 상태창 제거 (디자인상)
+
+  const div = document.createElement('div');
+  div.className = 'bot-message';
+  // Basic sanitization to prevent script injection
+  const sanitized = htmlContent.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  div.innerHTML = sanitized; // Use innerHTML for rendering formatted text
+
+  chatBox.appendChild(div);
+  scrollToBottom();
+  return div; // Return the element if needed later
+}
+
+function addErrorMessage(message) {
+    removeStatusUI(); // Remove status if an error occurs during processing
+    const div = document.createElement('div');
+    div.className = 'bot-message error-message'; // Use bot styling but with error color
+    div.innerHTML = `<strong>오류:</strong> ${escapeHtml(message)}`;
+    chatBox.appendChild(div);
+    scrollToBottom();
+}
+
+function scrollToBottom() {
+    // Slight delay sometimes helps ensure rendering is complete before scrolling
+    setTimeout(() => {
+       chatBox.scrollTop = chatBox.scrollHeight;
+    }, 50);
+}
 
 // --- Status UI ---
 function createStatusUI(message = "처리 중...") {
@@ -210,24 +250,25 @@ function createStatusUI(message = "처리 중...") {
         <span class="status-icon"><i class="fas fa-spinner fa-spin"></i></span>
         <span class="status-label">${escapeHtml(message)}</span>
     `;
-    // Insert status UI *before* the chat input container now
     chatInputContainer.parentNode.insertBefore(container, chatInputContainer);
     scrollToBottom();
 }
-function removeStatusUI() { /* ... (이전과 동일) ... */ }
+function removeStatusUI() {
+    const el = document.getElementById('status-container');
+    if (el) el.remove();
+}
 
 // --- Loading State ---
 function setLoadingState(isLoading, statusMessage = "처리 중...") {
     userInput.disabled = isLoading;
     sendButton.disabled = isLoading;
-    // 파일 입력 관련 UI 비활성화 제거
 
     if (isLoading) {
         createStatusUI(statusMessage);
     } else {
         removeStatusUI();
         if (!userInput.disabled) {
-             userInput.focus();
+            userInput.focus();
         }
     }
     scrollToBottom();
@@ -235,36 +276,32 @@ function setLoadingState(isLoading, statusMessage = "처리 중...") {
 
 /* ======== PDF File Handling (Fetching Predefined File) ======== */
 
-// **Function to Fetch and Upload the Predefined PDF**
 async function fetchAndUploadPredefinedPdf(pdfFilename) {
-    // Optimization: If the same PDF was already uploaded, reuse the URI
-    // Note: URIs might expire, so this is a basic optimization.
-    // A more robust solution would check URI validity or re-upload periodically.
     if (uploadedFileUri && lastUploadedPdfName === pdfFilename) {
          log(`Reusing previously uploaded URI for ${pdfFilename}: ${uploadedFileUri}`);
          return uploadedFileUri;
     }
 
     log(`Attempting to fetch predefined PDF: ${pdfFilename}`);
+    // *** 디버깅 로그 추가 ***
+    log('fetchAndUploadPredefinedPdf - pdfFilename:', pdfFilename);
     setLoadingState(true, `사전 정의된 PDF 로드 중: ${pdfFilename}...`);
 
     let pdfBlob;
     try {
-        // Fetch the PDF file using its relative path (works only when served via HTTP/S)
-        const response = await fetch(pdfFilename); // Request the file relative to the HTML
+        const response = await fetch(pdfFilename);
 
         if (!response.ok) {
-            // Handle common errors like 404 Not Found
             let errorMsg = `HTTP error! Status: ${response.status}`;
              if (response.status === 404) {
                  errorMsg = `오류: PDF 파일 '${pdfFilename}'을 찾을 수 없습니다. HTML 파일과 같은 디렉토리에 있는지, 파일 이름이 정확한지, 웹 서버가 파일을 제공하는지 확인하세요.`;
-             } else if (response.status === 0) { // Often indicates CORS or network error when using file:///
+             } else if (response.status === 0) {
                  errorMsg = `오류: PDF 파일 '${pdfFilename}' 로드 실패. 네트워크 오류 또는 CORS 정책 때문일 수 있습니다. 페이지가 웹 서버를 통해 제공되는지 확인하세요 (file:/// 경로 아님).`;
              }
             throw new Error(errorMsg);
         }
 
-        pdfBlob = await response.blob(); // Get the file content as a Blob
+        pdfBlob = await response.blob();
         log(`Successfully fetched PDF: ${pdfFilename}, Size: ${pdfBlob.size}, Type: ${pdfBlob.type}`);
 
         if (pdfBlob.size === 0) {
@@ -274,46 +311,39 @@ async function fetchAndUploadPredefinedPdf(pdfFilename) {
     } catch (error) {
         log(`Error fetching predefined PDF '${pdfFilename}':`, error);
         addErrorMessage(`사전 정의된 PDF 로드 실패: ${error.message}`);
-        setLoadingState(false); // Stop loading on fetch failure
-        return null; // Indicate failure
+        setLoadingState(false);
+        return null;
     }
 
-    // Now Upload the fetched Blob
     try {
-        // Create a File object from the Blob to easily pass name and type
         const pdfFileObject = new File([pdfBlob], pdfFilename, { type: pdfBlob.type || 'application/pdf' });
-
-        // Call the existing upload function
-        const fileUri = await uploadPdfToGeminiInternal(pdfFileObject); // Renamed internal function
+        const fileUri = await uploadPdfToGeminiInternal(pdfFileObject);
 
         if (fileUri) {
-             lastUploadedPdfName = pdfFilename; // Store the name of the successfully uploaded PDF
+             lastUploadedPdfName = pdfFilename;
         } else {
-            lastUploadedPdfName = null; // Clear if upload failed
+             lastUploadedPdfName = null;
         }
         return fileUri;
 
     } catch (error) {
-         // uploadPdfToGeminiInternal already logs and shows messages
-         log("Error during upload after fetching:", error);
-         lastUploadedPdfName = null;
-         // Ensure loading state is turned off if upload fails here
-         setLoadingState(false);
-         return null;
+       log("Error during upload after fetching:", error);
+       lastUploadedPdfName = null;
+       setLoadingState(false);
+       return null;
     }
 }
 
 
 /* ======== GEMINI API INTERACTION (using REST API) ======== */
 
-// **Internal Function to Upload PDF Blob/File using REST API**
-// (Renamed from uploadPdfToGemini to avoid confusion)
-async function uploadPdfToGeminiInternal(fileObject) { // Expects a File or Blob object
+async function uploadPdfToGeminiInternal(fileObject) {
     if (!fileObject) return null;
 
-    const fileName = fileObject.name || 'predefined.pdf'; // Use name from File object or default
+    const fileName = fileObject.name || 'predefined.pdf';
     log(`Uploading PDF data for: ${fileName}`);
-    // Update status message more accurately
+    // *** 디버깅 로그 추가 ***
+    log('uploadPdfToGeminiInternal - fileName:', fileName);
     setLoadingState(true, `Gemini API로 PDF 업로드 중: ${fileName}...`);
 
     const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiApiKey}`;
@@ -323,43 +353,42 @@ async function uploadPdfToGeminiInternal(fileObject) { // Expects a File or Blob
             method: 'POST',
             headers: {
                 'Content-Type': fileObject.type || 'application/pdf',
-                'X-Goog-Upload-File-Name': encodeURIComponent(fileName)
+                'X-Goog-Upload-File-Name': encodeURIComponent(fileName) // Use standard encodeURIComponent
             },
-            body: fileObject // Send the File or Blob object
+            body: fileObject
         });
 
         const data = await response.json();
 
         if (!response.ok || data.error) {
             let errorMsg = `File API Error: ${data.error?.message || `HTTP ${response.status}`}`;
-            // ... (rest of error handling as before) ...
-             if (data.error?.details) { /* ... */ }
-             if (response.status === 403) { /* ... */ }
+            if (data.error?.details) {
+                 try { errorMsg += ` Details: ${JSON.stringify(data.error.details)}`; } catch { /* ignore stringify error */ }
+            }
+             if (response.status === 403) {
+                 errorMsg += ' (Permission Denied - Check API Key permissions and ensure File API is enabled for the key)';
+             }
             throw new Error(errorMsg);
         }
 
-        const uploadedFile = data.file || data;
+        const uploadedFile = data.file || data; // Handle potential variations in response structure
         if (!uploadedFile || !uploadedFile.uri) {
-             console.error("Unexpected upload response structure:", data);
+            console.error("Unexpected upload response structure:", data);
             throw new Error("File API Error: Upload response did not contain expected file URI.");
         }
 
         log(`PDF Uploaded Successfully. URI: ${uploadedFile.uri}`);
-        uploadedFileUri = uploadedFile.uri; // Update global URI
+        uploadedFileUri = uploadedFile.uri;
         return uploadedFileUri;
 
     } catch (error) {
         log('PDF Upload Error:', error);
-        // Modify error message slightly for context
         addErrorMessage(`PDF 파일 업로드 실패 (${fileName}): ${error.message}. CORS, API 키, 네트워크 상태를 확인하세요.`);
         uploadedFileUri = null;
         return null;
     }
-    // Keep loading state, processMessage will handle turning it off
 }
 
-// **Function to get response based on uploaded PDF and question**
-// (This function remains largely the same, just takes question and fileUri)
 async function getGeminiResponsePdf(question, fileUri) {
     if (!geminiApiKey) return "오류: Gemini API 키가 누락되었습니다.";
     if (!fileUri) return "오류: PDF 파일 URI가 없습니다. 파일이 성공적으로 업로드되었는지 확인하세요.";
@@ -377,15 +406,21 @@ async function getGeminiResponsePdf(question, fileUri) {
         contents: [{
             role: "user",
             parts: [
-                { text: `${systemPrompt}\n\n질문: ${question}` },
-                 { fileData: { mimeType: "application/pdf", fileUri: fileUri } }
-             ]
+                { text: `${systemPrompt}\n\n질문: ${question}` }, // Combine prompt and question
+                { fileData: { mimeType: "application/pdf", fileUri: fileUri } }
+            ]
         }],
-        safetySettings: [ /* ... (Standard safety settings) ... */ ],
+        safetySettings: [
+             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+             { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+             { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+             { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
+        ],
         generationConfig: { temperature: 0.6 }
     };
 
-    const model = "gemini-1.5-flash-latest";
+    // Use a model that supports file input, like 1.5 Flash or Pro
+    const model = "gemini-2.5-pro-exp-03-25"; // Or "gemini-1.5-pro-latest"
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`;
 
     try {
@@ -396,20 +431,66 @@ async function getGeminiResponsePdf(question, fileUri) {
         });
         const data = await resp.json();
 
-        // --- Error Handling (as before) ---
-        if (!resp.ok || data.error) { /* ... (Detailed error handling) ... */ throw new Error(`Gemini API 오류: ${errorDetail}`); }
-        if (!data.candidates || !data.candidates[0].content /* ... */) { /* ... (Handle empty/blocked response) ... */ return `오류: Gemini로부터 비어 있거나 차단된 응답...`; }
+        // --- Detailed Error Handling ---
+        if (!resp.ok || data.error) {
+            let errorDetail = data.error ? data.error.message : `HTTP ${resp.status}`;
+            if (data.error?.details) {
+                 try { errorDetail += ` Details: ${JSON.stringify(data.error.details)}`; } catch { /* ignore error */ }
+            }
+            // Check for specific API key issues
+            if (errorDetail.includes("API key not valid") || errorDetail.includes("API_KEY_INVALID")) {
+                errorDetail = "잘못된 Gemini API 키입니다. config.js를 확인하세요.";
+            } else if (response.status === 403) {
+                errorDetail += " (권한 문제 - API 키 권한 확인 필요)";
+            } else if (response.status === 400) {
+                 errorDetail += " (잘못된 요청 - 요청 본문 확인 필요)";
+             }
+            throw new Error(`Gemini API 오류: ${errorDetail}`);
+        }
+        if (!data.candidates || !data.candidates[0].content || !data.candidates[0].content.parts || !data.candidates[0].content.parts[0].text) {
+            let reason = "알 수 없는 이유.";
+            if (data.promptFeedback && data.promptFeedback.blockReason) {
+                 reason = `프롬프트 차단됨: ${data.promptFeedback.blockReason}`;
+             } else if (data.candidates && data.candidates[0].finishReason) {
+                 reason = `완료 사유: ${data.candidates[0].finishReason}`;
+                 if (data.candidates[0].safetyRatings) {
+                     try { reason += ` 안전 등급: ${JSON.stringify(data.candidates[0].safetyRatings)}`; } catch {}
+                 }
+             }
+            log("Gemini 응답 내용이 없거나 차단됨. 사유:", reason, "전체 응답:", data);
+            return `오류: Gemini로부터 비어 있거나 차단된 응답을 받았습니다. (${reason})`;
+        }
+        // --- End Error Handling ---
 
         let answer = data.candidates[0].content.parts[0].text;
         log("Gemini로부터 PDF 기반 응답 수신 완료.");
 
+        // *** 디버깅 로그 추가 ***
+        console.log(">>> Gemini Raw Answer:", answer);
+
         // --- Markdown to HTML ---
-        answer = answer.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') /* ... (rest of markdown conversion) ... */;
+        // Basic conversion, consider a library like 'marked' for complex cases
+        answer = answer
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/^###+\s+(.*)/gm, '<h5>$1</h5>')
+            .replace(/^##\s+(.*)/gm, '<h4>$1</h4>')
+            .replace(/^#\s+(.*)/gm, '<h3>$1</h3>')
+            .replace(/^\s*[\-\*]\s+(.*)/gm, '<li>$1</li>') // Basic list item
+            .replace(/(<li>.*<\/li>\s*)+/g, '<ul>$&</ul>') // Wrap consecutive LIs in UL
+            .replace(/\n/g, '<br>') // Convert newlines
+            .replace(/<\/ul><br>/g, '</ul>') // Cleanup UL/BR
+            .replace(/<br><ul>/g, '<ul>')
+            .replace(/<li><br>/g, '<li>')
+            .replace(/<br><\/li>/g, '</li>');
+
+        // *** 디버깅 로그 추가 ***
+        log(">>> Answer after Markdown conversion:", answer);
         return answer;
 
     } catch (err) {
         log('Gemini API fetch error:', err);
-        // Use addErrorMessage directly here as it's the final step failure
         addErrorMessage(`Gemini 통신 오류: ${err.message}`);
         return null; // Indicate failure
     }
@@ -424,47 +505,39 @@ async function processMessage() {
     userInput.value = '';
     userInput.blur();
 
-    setLoadingState(true, "작업 준비 중..."); // Initial state
+    setLoadingState(true, "작업 준비 중...");
 
     try {
-        // 1. Fetch and Upload the *Predefined* PDF
-        // The function now handles fetching and uploading internally
         const currentFileUri = await fetchAndUploadPredefinedPdf(PREDEFINED_PDF_FILENAME);
 
         if (!currentFileUri) {
-            // Error message already shown by fetch or upload functions
-            // Ensure loading state is off if fetch/upload failed early
-            setLoadingState(false);
-            return; // Stop processing
+            setLoadingState(false); // Ensure loading stops if upload fails
+            return;
         }
 
-        // 2. Get Response from Gemini using the obtained file URI
         const botResponse = await getGeminiResponsePdf(userQuestion, currentFileUri);
 
-        // 3. Display Response or handle error
-        if (botResponse) { // Check if response is not null (null indicates fetch error handled previously)
-             if (botResponse.startsWith("오류:")) {
-                  addErrorMessage(botResponse.replace(/^오류:\s*/, ''));
-             } else {
-                 addBotMessage(botResponse);
-             }
+        if (botResponse !== null) { // Check explicitly for null (fetch error)
+            if (botResponse.startsWith("오류:")) {
+                addErrorMessage(botResponse.replace(/^오류:\s*/, ''));
+            } else {
+                addBotMessage(botResponse);
+            }
         }
-        // If botResponse is null, error was already displayed by getGeminiResponsePdf
+        // If botResponse is null, error message was already shown
 
     } catch (error) {
-         // Catch any unexpected errors during the process
-         log("Unexpected error in processMessage:", error);
-         addErrorMessage(`처리 중 예상치 못한 오류 발생: ${error.message}`);
+       log("Unexpected error in processMessage:", error);
+       addErrorMessage(`처리 중 예상치 못한 오류 발생: ${error.message}`);
     } finally {
-        // 4. Reset Loading State (ensure it's always turned off)
-        setLoadingState(false);
+        setLoadingState(false); // Always turn off loading indicator
     }
 }
 
 /* ======== EVENT LISTENERS ======== */
 function handleSend() {
     const msg = userInput.value.trim();
-    if (!sendButton.disabled && msg) { // Only check if not loading and message exists
+    if (!sendButton.disabled && msg) {
         processMessage();
     } else if (!msg) {
         addErrorMessage("질문을 입력해주세요.");
