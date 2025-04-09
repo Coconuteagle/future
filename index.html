@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Matrix Knowledge Bot (CRT Style)</title> <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.0.0/css/all.min.css">
+
+  <script src="config.js"></script>
+
+  <style>
+    /* --- Basic CRT Styling (Mostly Unchanged) --- */
+    body {
+      color: #00ff00;
+      font-family: 'Lucida Console', 'Courier New', monospace;
+      margin: 0; padding: 0;
+      background-color: #000000; /* Fallback color */
+      background-image: url('matrix.png'); /* Keep your background */
+      background-repeat: no-repeat;
+      background-size: cover;
+      background-position: center center;
+      background-attachment: fixed;
+    }
+    .crt-container {
+      border: 10px solid #00ff00;
+      border-radius: 4px;
+      box-sizing: border-box;
+      padding: 8px;
+      background-color: rgba(0, 0, 0, 0.8); /* Semi-transparent background */
+      height: 100vh; /* Make container fill viewport height */
+      display: flex;
+      flex-direction: column; /* Stack elements vertically */
+    }
+    .chat-box {
+      border: 1px solid #00ff00;
+      background-color: rgba(0, 0, 0, 0.01);
+      /* Adjust height calculation - remove fixed bottom part height */
+      /* Let it grow flexibily */
+      flex-grow: 1; /* Allow chat box to take available space */
+      min-height: 300px; /* Minimum height */
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 8px; /* Add margin below chatbox */
+    }
+    .chat-box::-webkit-scrollbar { width: 8px; }
+    .chat-box::-webkit-scrollbar-track { background-color: #001500; }
+    .chat-box::-webkit-scrollbar-thumb { background-color: #00ff00; border: 1px solid #001500; }
+
+    .user-message,
+    .bot-message {
+      max-width: 75%; /* Slightly wider */
+      margin-bottom: 12px;
+      border: 1px solid #00ff00;
+      border-radius: 8px;
+      padding: 8px 12px; /* More padding */
+      color: #00ff00;
+      word-break: break-word;
+      line-height: 1.5; /* Better readability */
+    }
+    .user-message {
+      background-color: #001500;
+      margin-left: auto; margin-right: 0;
+    }
+    .bot-message {
+      background-color: #000a00;
+      margin-left: 0; margin-right: auto;
+    }
+    .chat-input-container {
+      border-top: 1px solid #00ff00;
+      padding: 8px;
+      background-color: rgba(0, 0, 0, 0.8);
+      display: flex; /* Use flexbox for input and button */
+      align-items: center; /* Align items vertically */
+    }
+    .chat-input {
+      background-color: #000000;
+      color: #00ff00;
+      font-family: inherit;
+      border: 1px solid #00ff00;
+      padding: 10px; /* More padding */
+      flex-grow: 1; /* Input takes available space */
+      margin-right: 8px; /* Space between input and button */
+      outline: none;
+      box-sizing: border-box;
+    }
+    .chat-send-button {
+      background-color: #000000;
+      color: #00ff00;
+      font-family: inherit;
+      border: 1px solid #00ff00;
+      padding: 10px 15px; /* More padding */
+      cursor: pointer;
+      transition: opacity 0.2s;
+      flex-shrink: 0; /* Prevent button from shrinking */
+    }
+    .chat-send-button:hover { opacity: 0.8; }
+    .chat-send-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* --- Status UI (Simplified) --- */
+    #status-container {
+      border: 1px dashed #00ff00;
+      padding: 6px 8px;
+      margin-bottom: 8px;
+      background-color: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      color: #00ff00;
+      font-size: 0.9rem;
+    }
+    #status-container .status-icon {
+      width: 20px;
+      text-align: center;
+      margin-right: 0.5rem;
+      animation: spin 1.5s linear infinite; /* Always spin when visible */
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    /* --- End Simplified Status UI --- */
+
+    /* --- Removed Source Link Styling --- */
+    /* .source-link related styles removed */
+
+    /* Print styles (optional, kept for basic functionality) */
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #fff !important; color: #000 !important; font-family: sans-serif !important; }
+      .crt-container, .chat-box, .user-message, .bot-message { border: 1px solid #ccc !important; background-color: #fff !important; color: #000 !important; }
+      #status-container, .chat-input-container { display: none !important; }
+    }
+  </style>
+</head>
+
+<body>
+<div class="container mx-auto px-4 py-4 max-w-5xl crt-container">
+  <h1 class="text-2xl mb-4 text-center" style="color:#00ff00;">Matrix Knowledge Bot</h1>
+
+  <div id="chat-box" class="chat-box">
+    <div class="bot-message">
+      Ask me anything based on my knowledge base, neo.
+    </div>
+  </div>
+
+  <div class="chat-input-container no-print">
+    <input type="text" id="user-input" class="chat-input" placeholder="What do you want to know?">
+    <button id="send-button" class="chat-send-button">Send</button>
+  </div>
+
+  <div class="mt-3 text-sm text-center" style="color:#00ff00;">
+     © Knowledge Bot by Suhyun
+  </div>
+</div>
+
+<script>
+/* ======== CONFIG & BASIC SETUP ======== */
+const DEBUG = true;
+function log(...args) {
+  if (DEBUG) {
+    console.log(`[KnowledgeBot Log ${new Date().toLocaleTimeString()}]`, ...args);
+  }
+}
+
+// Get Gemini API Key from config.js
+const geminiApiKey = window.apiKeys?.GEMINI_API_KEY;
+
+if (!geminiApiKey) {
+  console.error("Gemini API Key is not set.");
+  alert("Gemini API Key is not set. Please check config.js.");
+}
+
+// --- Configuration ---
+// *** IMPORTANT: Set the path to your text file here ***
+// It should be relative to the HTML file, or an absolute path if needed.
+// Example: 'my_data.txt', 'data/knowledge.txt'
+const KNOWLEDGE_FILE_PATH = 'knowledge.txt'; // <--- SET YOUR FILENAME/PATH HERE
+
+// DOM Elements
+const chatBox = document.getElementById('chat-box');
+const userInput = document.getElementById('user-input');
+const sendButton = document.getElementById('send-button');
+// Keep reference to the input container to insert status before it
+const inputContainer = document.querySelector('.chat-input-container');
+
+// --- Cache (Simplified for Knowledge Base) ---
+// We can cache the loaded knowledge base to avoid refetching it every time
+let cachedKnowledge = null;
+let knowledgeLoadTimestamp = 0;
+const KNOWLEDGE_CACHE_MAX_AGE = 15 * 60 * 1000; // Cache knowledge for 15 minutes
+
+// --- Message Display Functions ---
+function escapeHtml(unsafe) {
+  if (typeof unsafe !== 'string') return '';
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function addUserMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'user-message';
+  div.textContent = text;
+  chatBox.appendChild(div);
+  scrollToBottom();
+}
+
+function addBotMessage(htmlContent) {
+  removeStatusUI(); // Remove status when bot replies
+  const div = document.createElement('div');
+  div.className = 'bot-message';
+  // Basic sanitization (remove script tags)
+  const sanitized = htmlContent.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  div.innerHTML = sanitized; // Use innerHTML to render formatting
+  chatBox.appendChild(div);
+  scrollToBottom();
+  return div; // Return the element if needed later
+}
+
+function scrollToBottom() {
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// --- Status UI (Simplified) ---
+function createStatusUI(message = "Processing...") {
+  removeStatusUI(); // Remove any existing status
+  const container = document.createElement('div');
+  container.id = 'status-container';
+  container.innerHTML = `
+    <span class="status-icon"><i class="fas fa-spinner"></i></span>
+    <span class="status-label">${escapeHtml(message)}</span>
+  `;
+  // Insert the status UI *before* the input container
+  inputContainer.parentNode.insertBefore(container, inputContainer);
+  scrollToBottom(); // Scroll down to show status if needed
+}
+
+function removeStatusUI() {
+  const el = document.getElementById('status-container');
+  if (el) el.remove();
+}
+
+// --- Loading State ---
+function setLoadingState(isLoading, statusMessage = "Processing...") {
+  userInput.disabled = isLoading;
+  sendButton.disabled = isLoading;
+  if (isLoading) {
+    createStatusUI(statusMessage);
+  } else {
+    removeStatusUI();
+    userInput.focus();
+  }
+  // Ensure scroll stays at bottom during state changes
+  scrollToBottom();
+}
+
+/* ======== KNOWLEDGE BASE LOADING ======== */
+async function loadKnowledgeBase(filePath) {
+  const now = Date.now();
+  // Check cache first
+  if (cachedKnowledge && (now - knowledgeLoadTimestamp < KNOWLEDGE_CACHE_MAX_AGE)) {
+    log('Using cached knowledge base.');
+    return cachedKnowledge;
+  }
+
+  log(`Attempting to load knowledge base from: ${filePath}`);
+  setLoadingState(true, `Loading knowledge from ${filePath}...`); // Show loading status
+
+  try {
+    const response = await fetch(filePath);
+    if (!response.ok) {
+      // Handle common errors more gracefully
+      let errorMsg = `HTTP error! Status: ${response.status}`;
+      if (response.status === 404) {
+          errorMsg = `Error: Knowledge file not found at '${filePath}'. Make sure the file exists and the path is correct relative to the HTML file.`;
+      } else if (response.status === 403) {
+          errorMsg = `Error: Permission denied to access knowledge file at '${filePath}'. Check file permissions.`;
+      }
+      throw new Error(errorMsg);
+    }
+    const text = await response.text();
+    if (!text.trim()) {
+        log(`Warning: Knowledge file '${filePath}' is empty.`);
+        // Decide how to handle empty file - maybe return empty string or specific message
+    }
+    log(`Successfully loaded knowledge base (${text.length} characters)`);
+    cachedKnowledge = text; // Update cache
+    knowledgeLoadTimestamp = now; // Update timestamp
+    return text;
+  } catch (error) {
+    log(`Error loading knowledge base from ${filePath}:`, error);
+    // Display error to user and return null to indicate failure
+    addBotMessage(`Critical Error: Could not load knowledge base.<br>Details: ${escapeHtml(error.message)}`);
+    cachedKnowledge = null; // Clear cache on error
+    return null; // Indicate failure
+  } finally {
+     // We might remove the loading state here or let the main process handle it
+     // Let's remove it here if it's just for loading the KB
+     // setLoadingState(false); // <-- remove this if processMessage handles overall loading
+  }
+}
+
+
+/* ======== GEMINI API INTERACTION ======== */
+async function getGeminiResponse(question, knowledgeText) {
+  if (!geminiApiKey) {
+    return "Error: Gemini API Key is missing.";
+  }
+  if (knowledgeText === null) { // Check if knowledge loading failed
+      return "Error: Cannot answer question because the knowledge base failed to load.";
+  }
+
+  log("Sending request to Gemini...");
+  setLoadingState(true, "Thinking..."); // Update status
+
+  // --- Prepare the Prompt ---
+  // This prompt instructs Gemini to use the provided text as its primary source.
+  const systemPrompt = `You are Morpheus AI, an assistant answering questions based *only* on the provided "Knowledge Text".
+- Analyze the user's question and the Knowledge Text.
+- Answer in Korean, using a slightly formal yet knowledgeable and helpful tone (like Morpheus explaining something important).
+- If the answer is *not* found within the Knowledge Text, clearly state that the information is unavailable in the provided text. Do *not* use external knowledge or make assumptions.
+- Structure your answer clearly. Use Markdown for formatting (bold, italics, lists) where appropriate.
+- Respond in a concise yet complete manner.`;
+
+  const fullPrompt = `System Instructions:
+${systemPrompt}
+
+---
+Knowledge Text:
+${knowledgeText}
+---
+
+User Question:
+${question}`;
+
+  // --- API Request Body ---
+  const reqBody = {
+    contents: [{
+      role: "user",
+      parts: [{ text: fullPrompt }]
+    }],
+    safetySettings: [
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
+    ],
+    generationConfig: {
+      temperature: 0.5 // Adjust temperature for desired creativity/factuality balance
+      // maxOutputTokens: 1024, // Optional: limit response length
+    }
+  };
+
+  // --- Define Model and URL ---
+  // Using a capable model like gemini-1.5-flash is recommended
+  const model = "gemini-1.5-flash-latest"; // Or "gemini-pro" or other suitable model
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`;
+
+  // --- Fetch API ---
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reqBody)
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok || data.error) {
+      let errorDetail = data.error ? data.error.message : `HTTP ${resp.status}`;
+      // Check for specific API key issues
+      if (errorDetail.includes("API key not valid")) {
+          errorDetail = "Invalid Gemini API Key provided in config.js.";
+      }
+      throw new Error(`Gemini API Error: ${errorDetail}`);
+    }
+
+    if (!data.candidates || !data.candidates[0].content || !data.candidates[0].content.parts || !data.candidates[0].content.parts[0].text) {
+         // Handle cases where the response structure is unexpected or content is blocked
+        let reason = "Unknown reason.";
+        if (data.candidates && data.candidates[0].finishReason) {
+            reason = `Finish Reason: ${data.candidates[0].finishReason}`;
+            if (data.candidates[0].safetyRatings) {
+                reason += ` Safety Ratings: ${JSON.stringify(data.candidates[0].safetyRatings)}`;
+            }
+        }
+        if (data.promptFeedback && data.promptFeedback.blockReason) {
+             reason = `Prompt Blocked: ${data.promptFeedback.blockReason}`;
+        }
+        log("Gemini response missing content or blocked. Reason:", reason, "Full Response:", data);
+      return `Error: Received an empty or blocked response from Gemini. ${reason}`;
+    }
+
+    let answer = data.candidates[0].content.parts[0].text;
+    log("Received Gemini response.");
+
+    // --- Basic Markdown to HTML Conversion ---
+    // (Keep this simple as Gemini might provide Markdown)
+    answer = answer
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')     // Italics
+      .replace(/`([^`]+)`/g, '<code>$1</code>')   // Inline code
+      // Basic lists (handle simple cases, might need improvement for nested)
+      .replace(/^\s*[\-\*]\s+(.*)/gm, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>\s*)+/g, '<ul>$&</ul>')
+       // Headings (optional)
+      .replace(/^###+\s+(.*)/gm, '<h5>$1</h5>')
+      .replace(/^##\s+(.*)/gm, '<h4>$1</h4>')
+      .replace(/^#\s+(.*)/gm, '<h3>$1</h3>')
+      // Convert newlines to <br> (important for preserving paragraphs)
+      .replace(/\n/g, '<br>')
+      // Cleanup potential issues with list conversion and <br>
+      .replace(/<\/ul><br>/g, '</ul>')
+      .replace(/<br><ul>/g, '<ul>')
+      .replace(/<li><br>/g, '<li>') // Remove breaks immediately inside li
+      .replace(/<br><\/li>/g, '</li>'); // Remove breaks immediately before /li
+
+    return answer;
+
+  } catch (err) {
+    log('Gemini API fetch error:', err);
+    // Provide a user-friendly error message
+    return `Error communicating with Gemini: ${escapeHtml(err.message)}`;
+  }
+}
+
+/* ======== MAIN MESSAGE PROCESSING ======== */
+async function processMessage(userQuestion) {
+  addUserMessage(userQuestion);
+  setLoadingState(true, "Initializing..."); // Initial loading state
+
+  // 1. Load Knowledge Base (uses cache if available)
+  const knowledgeText = await loadKnowledgeBase(KNOWLEDGE_FILE_PATH);
+
+  // If loading failed, loadKnowledgeBase would have shown an error and returned null.
+  // The getGeminiResponse function also checks for null and returns an error message.
+  if (knowledgeText === null) {
+      setLoadingState(false); // Stop loading indicator on critical failure
+      return; // Stop processing
+  }
+
+  // 2. Get Response from Gemini
+  // setLoadingState is already active, update message
+  setLoadingState(true, "Consulting knowledge matrix...");
+  const botResponse = await getGeminiResponse(userQuestion, knowledgeText);
+
+  // 3. Display Response
+  addBotMessage(botResponse); // addBotMessage handles removing the status UI
+
+  // 4. Reset Loading State
+  setLoadingState(false);
+}
+
+/* ======== EVENT LISTENERS ======== */
+function handleSend() {
+    const msg = userInput.value.trim();
+    if (msg && !sendButton.disabled) {
+        userInput.blur(); // Hide keyboard on mobile
+        processMessage(msg);
+        userInput.value = '';
+    }
+}
+
+sendButton.addEventListener('click', handleSend);
+
+userInput.addEventListener('keypress', (e) => {
+  // Send on Enter key, unless Shift is pressed (for multi-line input, though textarea is better for that)
+  if (e.key === 'Enter' && !e.shiftKey && !sendButton.disabled) {
+    e.preventDefault(); // Prevent default newline in input
+    handleSend();
+  }
+});
+
+// --- Initial Setup ---
+userInput.focus(); // Focus input on load
+log('Knowledge Bot Initialized. Waiting for input.');
+// Optional: Load knowledge base on startup?
+// loadKnowledgeBase(KNOWLEDGE_FILE_PATH).then(text => {
+//   if (text !== null) log("Knowledge base pre-loaded successfully.");
+//   else log("Knowledge base pre-loading failed.");
+// });
+
+</script>
+</body>
+</html>
