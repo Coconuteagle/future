@@ -211,31 +211,29 @@ function addUserMessage(text) {
 }
 
 function addBotMessage(htmlContent) {
-  log("addBotMessage called with content length:", htmlContent?.length); // <-- 디버깅 로그 추가
-  removeStatusUI(); // 새 봇메시지 시점에 기존 상태창 제거 (디자인상)
+  log("addBotMessage called with content length:", htmlContent?.length); // <-- 디버깅 로그 추가됨
+  removeStatusUI();
 
   const div = document.createElement('div');
   div.className = 'bot-message';
-  // Basic sanitization to prevent script injection
   const sanitized = htmlContent.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  div.innerHTML = sanitized; // Use innerHTML for rendering formatted text
+  div.innerHTML = sanitized;
 
   chatBox.appendChild(div);
   scrollToBottom();
-  return div; // Return the element if needed later
+  return div;
 }
 
 function addErrorMessage(message) {
-    removeStatusUI(); // Remove status if an error occurs during processing
+    removeStatusUI();
     const div = document.createElement('div');
-    div.className = 'bot-message error-message'; // Use bot styling but with error color
+    div.className = 'bot-message error-message';
     div.innerHTML = `<strong>오류:</strong> ${escapeHtml(message)}`;
     chatBox.appendChild(div);
     scrollToBottom();
 }
 
 function scrollToBottom() {
-    // Slight delay sometimes helps ensure rendering is complete before scrolling
     setTimeout(() => {
        chatBox.scrollTop = chatBox.scrollHeight;
     }, 50);
@@ -283,8 +281,7 @@ async function fetchAndUploadPredefinedPdf(pdfFilename) {
     }
 
     log(`Attempting to fetch predefined PDF: ${pdfFilename}`);
-    // *** 디버깅 로그 추가 ***
-    log('fetchAndUploadPredefinedPdf - pdfFilename:', pdfFilename);
+    log('fetchAndUploadPredefinedPdf - pdfFilename:', pdfFilename); // <-- 디버깅 로그 추가됨
     setLoadingState(true, `사전 정의된 PDF 로드 중: ${pdfFilename}...`);
 
     let pdfBlob;
@@ -342,8 +339,7 @@ async function uploadPdfToGeminiInternal(fileObject) {
 
     const fileName = fileObject.name || 'predefined.pdf';
     log(`Uploading PDF data for: ${fileName}`);
-    // *** 디버깅 로그 추가 ***
-    log('uploadPdfToGeminiInternal - fileName:', fileName);
+    log('uploadPdfToGeminiInternal - fileName:', fileName); // <-- 디버깅 로그 추가됨
     setLoadingState(true, `Gemini API로 PDF 업로드 중: ${fileName}...`);
 
     const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiApiKey}`;
@@ -353,7 +349,7 @@ async function uploadPdfToGeminiInternal(fileObject) {
             method: 'POST',
             headers: {
                 'Content-Type': fileObject.type || 'application/pdf',
-                'X-Goog-Upload-File-Name': encodeURIComponent(fileName) // Use standard encodeURIComponent
+                'X-Goog-Upload-File-Name': encodeURIComponent(fileName)
             },
             body: fileObject
         });
@@ -371,7 +367,7 @@ async function uploadPdfToGeminiInternal(fileObject) {
             throw new Error(errorMsg);
         }
 
-        const uploadedFile = data.file || data; // Handle potential variations in response structure
+        const uploadedFile = data.file || data;
         if (!uploadedFile || !uploadedFile.uri) {
             console.error("Unexpected upload response structure:", data);
             throw new Error("File API Error: Upload response did not contain expected file URI.");
@@ -406,7 +402,7 @@ async function getGeminiResponsePdf(question, fileUri) {
         contents: [{
             role: "user",
             parts: [
-                { text: `${systemPrompt}\n\n질문: ${question}` }, // Combine prompt and question
+                { text: `${systemPrompt}\n\n질문: ${question}` },
                 { fileData: { mimeType: "application/pdf", fileUri: fileUri } }
             ]
         }],
@@ -419,8 +415,7 @@ async function getGeminiResponsePdf(question, fileUri) {
         generationConfig: { temperature: 0.6 }
     };
 
-    // Use a model that supports file input, like 1.5 Flash or Pro
-    const model = "gemini-2.5-pro-exp-03-25"; // Or "gemini-1.5-pro-latest"
+    const model = "gemini-1.5-flash-latest";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`;
 
     try {
@@ -431,45 +426,50 @@ async function getGeminiResponsePdf(question, fileUri) {
         });
         const data = await resp.json();
 
+        // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        //       Gemini로부터 받은 전체 응답 데이터를 로그로 출력 (추가됨)
+        // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        console.log(">>> Full Gemini Response Data:", JSON.stringify(data, null, 2)); // 객체 구조를 보기 좋게 출력
+
         // --- Detailed Error Handling ---
         if (!resp.ok || data.error) {
             let errorDetail = data.error ? data.error.message : `HTTP ${resp.status}`;
             if (data.error?.details) {
                  try { errorDetail += ` Details: ${JSON.stringify(data.error.details)}`; } catch { /* ignore error */ }
             }
-            // Check for specific API key issues
             if (errorDetail.includes("API key not valid") || errorDetail.includes("API_KEY_INVALID")) {
                 errorDetail = "잘못된 Gemini API 키입니다. config.js를 확인하세요.";
-            } else if (response.status === 403) {
+            } else if (resp.status === 403) { // Use resp.status here
                 errorDetail += " (권한 문제 - API 키 권한 확인 필요)";
-            } else if (response.status === 400) {
+            } else if (resp.status === 400) { // Use resp.status here
                  errorDetail += " (잘못된 요청 - 요청 본문 확인 필요)";
              }
             throw new Error(`Gemini API 오류: ${errorDetail}`);
         }
         if (!data.candidates || !data.candidates[0].content || !data.candidates[0].content.parts || !data.candidates[0].content.parts[0].text) {
-            let reason = "알 수 없는 이유.";
-            if (data.promptFeedback && data.promptFeedback.blockReason) {
-                 reason = `프롬프트 차단됨: ${data.promptFeedback.blockReason}`;
-             } else if (data.candidates && data.candidates[0].finishReason) {
-                 reason = `완료 사유: ${data.candidates[0].finishReason}`;
-                 if (data.candidates[0].safetyRatings) {
-                     try { reason += ` 안전 등급: ${JSON.stringify(data.candidates[0].safetyRatings)}`; } catch {}
-                 }
-             }
-            log("Gemini 응답 내용이 없거나 차단됨. 사유:", reason, "전체 응답:", data);
-            return `오류: Gemini로부터 비어 있거나 차단된 응답을 받았습니다. (${reason})`;
+             let reason = "알 수 없는 이유.";
+             if (data.promptFeedback && data.promptFeedback.blockReason) {
+                  reason = `프롬프트 차단됨: ${data.promptFeedback.blockReason}`;
+              } else if (data.candidates && data.candidates[0].finishReason) {
+                  reason = `완료 사유: ${data.candidates[0].finishReason}`;
+                  if (data.candidates[0].safetyRatings) {
+                      try { reason += ` 안전 등급: ${JSON.stringify(data.candidates[0].safetyRatings)}`; } catch {}
+                  }
+              }
+             log("Gemini 응답 내용이 없거나 차단됨. 사유:", reason, "전체 응답:", data);
+             return `오류: Gemini로부터 비어 있거나 차단된 응답을 받았습니다. (${reason})`;
         }
         // --- End Error Handling ---
 
-        let answer = data.candidates[0].content.parts[0].text;
-        log("Gemini로부터 PDF 기반 응답 수신 완료.");
 
-        // *** 디버깅 로그 추가 ***
-        console.log(">>> Gemini Raw Answer:", answer);
+        // 이제 텍스트 접근 시도 (여기서 오류가 날 수 있음)
+        let answer = data.candidates[0].content.parts[0].text;
+
+        log("Gemini로부터 PDF 기반 응답 수신 완료."); // 이 로그는 찍힘
+
+        console.log(">>> Gemini Raw Answer:", answer); // 이 로그는 안 찍혔었음 (이제 확인 가능)
 
         // --- Markdown to HTML ---
-        // Basic conversion, consider a library like 'marked' for complex cases
         answer = answer
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
@@ -477,16 +477,15 @@ async function getGeminiResponsePdf(question, fileUri) {
             .replace(/^###+\s+(.*)/gm, '<h5>$1</h5>')
             .replace(/^##\s+(.*)/gm, '<h4>$1</h4>')
             .replace(/^#\s+(.*)/gm, '<h3>$1</h3>')
-            .replace(/^\s*[\-\*]\s+(.*)/gm, '<li>$1</li>') // Basic list item
-            .replace(/(<li>.*<\/li>\s*)+/g, '<ul>$&</ul>') // Wrap consecutive LIs in UL
-            .replace(/\n/g, '<br>') // Convert newlines
-            .replace(/<\/ul><br>/g, '</ul>') // Cleanup UL/BR
+            .replace(/^\s*[\-\*]\s+(.*)/gm, '<li>$1</li>')
+            .replace(/(<li>.*<\/li>\s*)+/g, '<ul>$&</ul>')
+            .replace(/\n/g, '<br>')
+            .replace(/<\/ul><br>/g, '</ul>')
             .replace(/<br><ul>/g, '<ul>')
             .replace(/<li><br>/g, '<li>')
             .replace(/<br><\/li>/g, '</li>');
 
-        // *** 디버깅 로그 추가 ***
-        log(">>> Answer after Markdown conversion:", answer);
+        log(">>> Answer after Markdown conversion:", answer); // <-- 디버깅 로그 추가됨
         return answer;
 
     } catch (err) {
@@ -511,26 +510,25 @@ async function processMessage() {
         const currentFileUri = await fetchAndUploadPredefinedPdf(PREDEFINED_PDF_FILENAME);
 
         if (!currentFileUri) {
-            setLoadingState(false); // Ensure loading stops if upload fails
+            setLoadingState(false);
             return;
         }
 
         const botResponse = await getGeminiResponsePdf(userQuestion, currentFileUri);
 
-        if (botResponse !== null) { // Check explicitly for null (fetch error)
+        if (botResponse !== null) {
             if (botResponse.startsWith("오류:")) {
                 addErrorMessage(botResponse.replace(/^오류:\s*/, ''));
             } else {
                 addBotMessage(botResponse);
             }
         }
-        // If botResponse is null, error message was already shown
 
     } catch (error) {
        log("Unexpected error in processMessage:", error);
        addErrorMessage(`처리 중 예상치 못한 오류 발생: ${error.message}`);
     } finally {
-        setLoadingState(false); // Always turn off loading indicator
+        setLoadingState(false);
     }
 }
 
